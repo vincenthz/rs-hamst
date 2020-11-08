@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Vincent Hanquez <vincent@typed.io>"]
 edition = "2018"
 description = "Hash Array Mapped Shareable Trie"
+repository = "https://github.com/vincenthz/rs-hamst/"
+keywords = [ "HAMT", "Multi-thread", "Shareable" ]
+categories = [ "data-structures" ]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
