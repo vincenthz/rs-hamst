@@ -70,7 +70,7 @@ impl<H: Hasher + Default, K: PartialEq + Eq + Hash, V> Hamt<K, V, H> {
     /// # use std::collections::hash_map::DefaultHasher;
     /// # fn main() {
     /// let empty : Hamt<u32, u32, DefaultHasher> = Hamt::new();
-    /// let result = reference.freeze(|x| {
+    /// let result = empty.mutate_freeze(|x| {
     ///     x.insert(10, 20)?;
     ///     x.insert(20, 30)
     /// }).expect("it works");
