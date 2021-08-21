@@ -12,7 +12,7 @@ use std::slice;
 /// The structure is immutable from root to leaves, where
 /// each node of this structure is also independently
 /// shareable, including on different thread.
-pub struct Hamt<K, V, H> {
+pub struct Hamt<K, V, H = std::collections::hash_map::DefaultHasher> {
     pub(crate) root: Node<K, V>,
     pub(crate) hasher: PhantomData<H>,
 }
