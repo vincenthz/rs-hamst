@@ -295,13 +295,13 @@ mod tests {
     ) -> bool {
         // using the btreemap reference as starting point
         for (k, v) in reference.iter() {
-            if h.lookup(&k) != Some(v) {
+            if h.lookup(k) != Some(v) {
                 return false;
             }
         }
         // then asking the hamt for any spurious values
         for (k, v) in h.iter() {
-            if reference.get(&k) != Some(v) {
+            if reference.get(k) != Some(v) {
                 return false;
             }
         }
