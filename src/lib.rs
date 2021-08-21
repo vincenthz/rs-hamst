@@ -31,7 +31,6 @@ mod tests {
     use quickcheck::{Arbitrary, Gen};
 
     use std::cmp;
-    use std::collections::hash_map::DefaultHasher;
     use std::collections::BTreeMap;
     use std::hash::Hash;
 
@@ -75,7 +74,7 @@ mod tests {
 
     #[test]
     fn insert_lookup() {
-        let h: Hamt<String, u32, DefaultHasher> = Hamt::new();
+        let h: Hamt<String, u32> = Hamt::new();
 
         let k1 = "ABC".to_string();
         let v1 = 12u32;
@@ -110,7 +109,7 @@ mod tests {
 
     #[test]
     fn dup_insert() {
-        let mut h: Hamt<&String, u32, DefaultHasher> = Hamt::new();
+        let mut h: Hamt<&String, u32> = Hamt::new();
         let dkey = "A".to_string();
         h = h.mutate_freeze(|hm| hm.insert(&dkey, 1)).unwrap();
         assert_eq!(
@@ -121,13 +120,13 @@ mod tests {
 
     #[test]
     fn empty_size() {
-        let h: Hamt<&String, u32, DefaultHasher> = Hamt::new();
+        let h: Hamt<&String, u32> = Hamt::new();
         assert_eq!(h.size(), 0)
     }
 
     #[test]
     fn delete_key_not_exist() {
-        let mut h: Hamt<&String, u32, DefaultHasher> = Hamt::new();
+        let mut h: Hamt<&String, u32> = Hamt::new();
         let dkey = "A".to_string();
         h = h.mutate_freeze(|hm| hm.insert(&dkey, 1)).unwrap();
         assert_eq!(
@@ -139,7 +138,7 @@ mod tests {
 
     #[test]
     fn delete_value_not_match() {
-        let mut h: Hamt<&String, u32, DefaultHasher> = Hamt::new();
+        let mut h: Hamt<&String, u32> = Hamt::new();
         let dkey = "A".to_string();
         h = h.mutate_freeze(|hm| hm.insert(&dkey, 1)).unwrap();
         assert_eq!(
@@ -156,7 +155,7 @@ mod tests {
 
     #[test]
     fn delete() {
-        let mut h: Hamt<String, u32, DefaultHasher> = Hamt::new();
+        let mut h: Hamt<String, u32> = Hamt::new();
 
         let keys = [
             ("KEY1", 10000u32),
@@ -291,7 +290,7 @@ mod tests {
 
     fn property_btreemap_eq<A: Eq + Ord + Hash, B: PartialEq>(
         reference: &BTreeMap<A, B>,
-        h: &Hamt<A, B, DefaultHasher>,
+        h: &Hamt<A, B>,
     ) -> bool {
         // using the btreemap reference as starting point
         for (k, v) in reference.iter() {
@@ -311,7 +310,7 @@ mod tests {
     #[quickcheck]
     fn insert_equivalent(xs: Vec<(String, u32)>) -> bool {
         let mut reference = BTreeMap::new();
-        let mut h: HamtMut<String, u32, DefaultHasher> = HamtMut::new();
+        let mut h: HamtMut<String, u32> = HamtMut::new();
         for (k, v) in xs.iter() {
             if reference.get(k).is_some() {
                 continue;
@@ -343,7 +342,7 @@ mod tests {
     fn large_insert_equivalent(xs: LargeVec<(String, u32)>) -> bool {
         let xs = xs.0;
         let mut reference = BTreeMap::new();
-        let mut h: HamtMut<String, u32, DefaultHasher> = HamtMut::new();
+        let mut h: HamtMut<String, u32> = HamtMut::new();
         for (k, v) in xs.iter() {
             if reference.get(k).is_some() {
                 continue;
@@ -368,7 +367,7 @@ mod tests {
         xs: Plan<K, V>,
         update_f: F,
         replace_with_f: G,
-    ) -> (Hamt<K, V, DefaultHasher>, BTreeMap<K, V>)
+    ) -> (Hamt<K, V>, BTreeMap<K, V>)
     where
         K: Hash + Clone + Eq + Ord + Sync,
         V: Clone + PartialEq + Sync,
@@ -376,7 +375,7 @@ mod tests {
         G: Fn(&V) -> V + Copy,
     {
         let mut reference = BTreeMap::new();
-        let mut h: HamtMut<K, V, DefaultHasher> = HamtMut::new();
+        let mut h: HamtMut<K, V> = HamtMut::new();
         //println!("plan {} operations", xs.0.len());
         for op in xs.0.iter() {
             match op {
