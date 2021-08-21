@@ -21,7 +21,7 @@ impl<H, K, V> Clone for Hamt<K, V, H> {
     fn clone(&self) -> Self {
         Hamt {
             root: self.root.clone(),
-            hasher: self.hasher.clone(),
+            hasher: self.hasher,
         }
     }
 }
