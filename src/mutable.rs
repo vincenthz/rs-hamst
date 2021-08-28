@@ -37,7 +37,7 @@ pub enum ReplaceError {
 /// Once modification happens, then each nodes from
 /// root to leaf will be modified and kept in an
 /// efficient mutable format until freezing.
-pub struct HamtMut<K, V, H> {
+pub struct HamtMut<K, V, H = std::collections::hash_map::DefaultHasher> {
     root: Hamt<K, V, H>,
 }
 

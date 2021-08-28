@@ -12,7 +12,7 @@ use std::slice;
 /// The structure is immutable from root to leaves, where
 /// each node of this structure is also independently
 /// shareable, including on different thread.
-pub struct Hamt<K, V, H> {
+pub struct Hamt<K, V, H = std::collections::hash_map::DefaultHasher> {
     pub(crate) root: Node<K, V>,
     pub(crate) hasher: PhantomData<H>,
 }
@@ -21,7 +21,7 @@ impl<H, K, V> Clone for Hamt<K, V, H> {
     fn clone(&self) -> Self {
         Hamt {
             root: self.root.clone(),
-            hasher: self.hasher.clone(),
+            hasher: self.hasher,
         }
     }
 }
@@ -108,7 +108,7 @@ impl<H: Hasher + Default, K: Hash + Eq, V> Hamt<K, V, H> {
                 LookupRet::Found(v) => return Some(v),
                 LookupRet::ContinueIn(subnode) => {
                     lvl += 1;
-                    n = &subnode;
+                    n = subnode;
                 }
             }
         }
@@ -137,7 +137,7 @@ impl<'a, K, V> Iterator for HamtIter<'a, K, V> {
             match x {
                 Some(mut iter) => match iter.next() {
                     None => self.content = None,
-                    Some(ref o) => {
+                    Some(o) => {
                         self.content = Some(iter);
                         return Some((&o.0, &o.1));
                     }
@@ -150,7 +150,7 @@ impl<'a, K, V> Iterator for HamtIter<'a, K, V> {
                         }
                         Some(next) => match next.as_ref() {
                             Entry::SubNode(ref sub) => self.stack.push(sub.iter()),
-                            Entry::Leaf(_, ref k, ref v) => return Some((&k, &v)),
+                            Entry::Leaf(_, ref k, ref v) => return Some((k, v)),
                             Entry::LeafMany(_, ref col) => self.content = Some(col.iter()),
                         },
                     },
