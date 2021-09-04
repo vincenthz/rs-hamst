@@ -8,11 +8,6 @@
 //! will be re-created from the node onwards to the leaf.
 
 #![allow(dead_code)]
-#[cfg(test)]
-extern crate quickcheck;
-#[cfg(test)]
-#[macro_use(quickcheck)]
-extern crate quickcheck_macros;
 
 mod bitmap;
 mod collision;
@@ -28,9 +23,12 @@ pub use hamt::*;
 mod tests {
     use super::*;
 
-    use quickcheck::{Arbitrary, Gen};
+    use smoke::generator::{self, BoxGenerator};
+    use smoke::Generator;
+    use smoke_macros::smoketest;
 
-    use std::cmp;
+    //use quickcheck::{Arbitrary, Gen};
+
     use std::collections::BTreeMap;
     use std::hash::Hash;
 
@@ -50,26 +48,35 @@ mod tests {
 
     const SIZE_LIMIT: usize = 5120;
 
-    impl<K: Arbitrary + Clone + Send, V: Arbitrary + Clone + Send> Arbitrary for Plan<K, V> {
-        fn arbitrary<G: Gen>(g: &mut G) -> Plan<K, V> {
-            let nb_ops = 1000 + cmp::min(SIZE_LIMIT, Arbitrary::arbitrary(g));
-            let mut v = Vec::new();
-            for _ in 0..nb_ops {
-                let op_nb: u32 = Arbitrary::arbitrary(g);
-                let op = match op_nb % 7u32 {
-                    0 => PlanOperation::Insert(Arbitrary::arbitrary(g), Arbitrary::arbitrary(g)),
-                    1 => PlanOperation::DeleteOne(Arbitrary::arbitrary(g)),
-                    2 => PlanOperation::DeleteOneMatching(Arbitrary::arbitrary(g)),
-                    3 => PlanOperation::Update(Arbitrary::arbitrary(g)),
-                    4 => PlanOperation::UpdateRemoval(Arbitrary::arbitrary(g)),
-                    5 => PlanOperation::Replace(Arbitrary::arbitrary(g), Arbitrary::arbitrary(g)),
-                    6 => PlanOperation::ReplaceWith(Arbitrary::arbitrary(g)),
-                    _ => panic!("test internal error: quickcheck tag code is invalid"),
-                };
-                v.push(op)
-            }
-            Plan(v)
-        }
+    fn ascii_string() -> impl Generator<Item = String> {
+        let gen_ascii_char = generator::range(30..0x7fu32).map(|x| std::char::from_u32(x).unwrap());
+        generator::vector(generator::range(1..8usize), gen_ascii_char)
+            .map(|s| s.into_iter().collect::<String>())
+    }
+
+    fn gen_plan() -> impl Generator<Item = Plan<String, u32>> {
+        let sz = generator::range(1000..1000 + SIZE_LIMIT);
+        let g0 = generator::product2(ascii_string(), generator::num(), |g1, g2| {
+            PlanOperation::Insert(g1, g2)
+        });
+        let g1 = generator::num().map(PlanOperation::DeleteOne);
+        let g2 = generator::num().map(PlanOperation::DeleteOneMatching);
+        let g3 = generator::num().map(PlanOperation::Update);
+        let g4 = generator::num().map(PlanOperation::UpdateRemoval);
+        let g5 = generator::product2(generator::num(), generator::num(), |g1, g2| {
+            PlanOperation::Replace(g1, g2)
+        });
+        let g6 = generator::num().map(PlanOperation::ReplaceWith);
+        let el = generator::choose(vec![
+            Box::new(g0.into_boxed()),
+            Box::new(g1.into_boxed()),
+            Box::new(g2.into_boxed()),
+            Box::new(g3.into_boxed()),
+            Box::new(g4.into_boxed()),
+            Box::new(g5.into_boxed()),
+            Box::new(g6.into_boxed()),
+        ]);
+        generator::vector(sz, el).map(|v| Plan(v))
     }
 
     #[test]
@@ -286,9 +293,8 @@ mod tests {
             }
         }
     }
-    */
 
-    fn property_btreemap_eq<A: Eq + Ord + Hash, B: PartialEq>(
+    fn xproperty_btreemap_eq<A: Eq + Ord + Hash, B: PartialEq>(
         reference: &BTreeMap<A, B>,
         h: &Hamt<A, B>,
     ) -> bool {
@@ -306,9 +312,38 @@ mod tests {
         }
         true
     }
+    */
 
-    #[quickcheck]
-    fn insert_equivalent(xs: Vec<(String, u32)>) -> bool {
+    fn property_btreemap_eq<A: Eq + Ord + Hash, B: PartialEq>(
+        reference: &BTreeMap<A, B>,
+        h: &Hamt<A, B>,
+    ) -> impl smoke::property::Property {
+        let mut same = true;
+        // using the btreemap reference as starting point
+        for (k, v) in reference.iter() {
+            if h.lookup(k) != Some(v) {
+                same = false;
+            }
+        }
+        // then asking the hamt for any spurious values
+        for (k, v) in h.iter() {
+            if reference.get(k) != Some(v) {
+                same = false;
+            }
+        }
+        smoke::property::equal(same, true)
+    }
+
+    fn vec_string_int() -> BoxGenerator<Vec<(String, u32)>> {
+        let gen_ascii_char = generator::range(30..0x7fu32).map(|x| std::char::from_u32(x).unwrap());
+        let string = generator::vector(generator::range(1..8usize), gen_ascii_char)
+            .map(|s| s.into_iter().collect::<String>());
+        let gen_t = generator::product2(string, generator::num(), |g1, g2| (g1, g2));
+        generator::vector(generator::range(1..43), gen_t).into_boxed()
+    }
+
+    #[smoketest{xs:vec_string_int()}]
+    fn insert_equivalent(xs: Vec<(String, u32)>) {
         let mut reference = BTreeMap::new();
         let mut h: HamtMut<String, u32> = HamtMut::new();
         for (k, v) in xs.iter() {
@@ -318,39 +353,6 @@ mod tests {
             reference.insert(k.clone(), *v);
             h.insert(k.clone(), *v).expect("insert error");
         }
-        property_btreemap_eq(&reference, &h.freeze())
-    }
-
-    #[derive(Clone, Debug, PartialEq, Eq)]
-    pub struct LargeVec<A>(Vec<A>);
-
-    const LARGE_MIN: usize = 1000;
-    const LARGE_DIFF: usize = 1000;
-
-    impl<A: Arbitrary + Clone + PartialEq + Send + 'static> Arbitrary for LargeVec<A> {
-        fn arbitrary<G: Gen>(g: &mut G) -> Self {
-            let nb = LARGE_MIN + (usize::arbitrary(g) % LARGE_DIFF);
-            let mut v = Vec::with_capacity(nb);
-            for _ in 0..nb {
-                v.push(Arbitrary::arbitrary(g))
-            }
-            LargeVec(v)
-        }
-    }
-
-    #[quickcheck]
-    fn large_insert_equivalent(xs: LargeVec<(String, u32)>) -> bool {
-        let xs = xs.0;
-        let mut reference = BTreeMap::new();
-        let mut h: HamtMut<String, u32> = HamtMut::new();
-        for (k, v) in xs.iter() {
-            if reference.get(k).is_some() {
-                continue;
-            }
-            reference.insert(k.clone(), *v);
-            h.insert(k.clone(), *v).expect("insert error");
-        }
-
         property_btreemap_eq(&reference, &h.freeze())
     }
 
@@ -447,17 +449,17 @@ mod tests {
         (h.freeze(), reference)
     }
 
-    #[quickcheck]
+    #[smoketest{xs: gen_plan()}]
     fn plan_equivalent(xs: Plan<String, u32>) -> bool {
         let (h, reference) = arbitrary_hamt_and_btree(xs, next_u32, |v| v.wrapping_mul(2));
         property_btreemap_eq(&reference, &h)
     }
 
-    #[quickcheck]
+    #[smoketest{xs: gen_plan()}]
     fn iter_equivalent(xs: Plan<String, u32>) -> bool {
         use std::iter::FromIterator;
         let (h, reference) = arbitrary_hamt_and_btree(xs, next_u32, |v| v.wrapping_mul(2));
         let after_iter = BTreeMap::from_iter(h.iter().map(|(k, v)| (k.clone(), *v)));
-        reference == after_iter
+        smoke::property::equal(reference, after_iter)
     }
 }
