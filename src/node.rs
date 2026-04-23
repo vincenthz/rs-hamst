@@ -137,7 +137,7 @@ impl<K, V> Node<K, V> {
         }
     }
 
-    pub fn iter(&self) -> NodeIter<K, V> {
+    pub fn iter<'a>(&'a self) -> NodeIter<'a, K, V> {
         self.children.iter()
     }
 }

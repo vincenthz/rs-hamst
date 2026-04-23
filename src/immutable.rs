@@ -1,6 +1,5 @@
 use super::hash::{Hash, HashedKey, Hasher};
 use super::mutable::HamtMut;
-pub use super::mutable::{InsertError, RemoveError, ReplaceError, UpdateError};
 use super::node::{lookup_one, size_rec, Entry, LookupRet, Node, NodeIter};
 use std::iter::FromIterator;
 use std::marker::PhantomData;
@@ -119,7 +118,7 @@ impl<H: Hasher + Default, K: Hash + Eq, V> Hamt<K, V, H> {
     }
 
     /// Create a new iterator for this HAMT
-    pub fn iter(&self) -> HamtIter<K, V> {
+    pub fn iter<'a>(&'a self) -> HamtIter<'a, K, V> {
         HamtIter {
             stack: vec![self.root.iter()],
             content: None,
