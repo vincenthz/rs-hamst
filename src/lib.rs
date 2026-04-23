@@ -23,8 +23,8 @@ pub use hamt::*;
 mod tests {
     use super::*;
 
-    use smoke::generator::{self, BoxGenerator};
     use smoke::Generator;
+    use smoke::generator::{self, BoxGenerator};
     use smoke_macros::smoketest;
 
     //use quickcheck::{Arbitrary, Gen};
@@ -317,7 +317,7 @@ mod tests {
     fn property_btreemap_eq<A: Eq + Ord + Hash, B: PartialEq>(
         reference: &BTreeMap<A, B>,
         h: &Hamt<A, B>,
-    ) -> impl smoke::property::Property {
+    ) -> impl smoke::property::Property + use<A, B> {
         let mut same = true;
         // using the btreemap reference as starting point
         for (k, v) in reference.iter() {

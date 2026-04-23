@@ -8,11 +8,11 @@ repository = "https://github.com/vincenthz/rs-hamst/"
 description = "Hash Array Mapped Shareable Trie"
 keywords = [ "HAMT", "Multi-thread", "Shareable" ]
 categories = [ "data-structures" ]
-edition = "2018"
+edition = "2024"
 
 
 [dependencies]
 
 [dev-dependencies]
-smoke = "0.3"
-smoke-macros = "0.1"
+smoke = "0.4"
+smoke-macros = "0.4"

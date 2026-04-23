@@ -1,6 +1,6 @@
 use super::hash::{Hash, HashedKey, Hasher};
 use super::mutable::HamtMut;
-use super::node::{lookup_one, size_rec, Entry, LookupRet, Node, NodeIter};
+use super::node::{Entry, LookupRet, Node, NodeIter, lookup_one, size_rec};
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::mem::swap;
@@ -148,9 +148,9 @@ impl<'a, K, V> Iterator for HamtIter<'a, K, V> {
                             self.stack.pop();
                         }
                         Some(next) => match next.as_ref() {
-                            Entry::SubNode(ref sub) => self.stack.push(sub.iter()),
-                            Entry::Leaf(_, ref k, ref v) => return Some((k, v)),
-                            Entry::LeafMany(_, ref col) => self.content = Some(col.iter()),
+                            Entry::SubNode(sub) => self.stack.push(sub.iter()),
+                            Entry::Leaf(_, k, v) => return Some((k, v)),
+                            Entry::LeafMany(_, col) => self.content = Some(col.iter()),
                         },
                     },
                 },
