@@ -1,3 +1,6 @@
+//! Hash computation + per-level index extraction — slices a 64-bit
+//! hash into 5-bit `LevelIndex` chunks.
+
 pub use std::hash::{Hash, Hasher};
 use std::marker::PhantomData;
 

@@ -2,11 +2,101 @@
 //!
 //! Each key is hashed and store related to the hash value.
 //!
-//! When cloning the data structure, the nodes are shared, so that the operation is
-//! is really cheap. When modifying the data structure, after an explicit thawing,
-//! the mutable structure share the unmodified node and only nodes requiring modification
-//! will be re-created from the node onwards to the leaf.
+//! # HAMT — what and why
+//!
+//! A **Hash Array Mapped Trie** stores each `(key, value)` at the
+//! position dictated by the key's 64-bit hash: the hash is sliced
+//! into 5-bit chunks, each chunk indexes into a 32-slot sparse
+//! array at one level of a trie. Lookups are `O(log₃₂ n)` — on a
+//! 1-million-entry map that's at most four indirections. Hash
+//! collisions are handled by a small linear bucket at the bottom
+//! level; they do not degrade the structure.
+//!
+//! # Thaw / freeze — how mutation works
+//!
+//! The top-level [`Hamt`] is strictly immutable. To change anything,
+//! call [`Hamt::thaw`] (or the all-in-one [`Hamt::mutate_freeze`])
+//! to obtain a [`HamtMut`] — a mutable workspace whose initial
+//! state shares every node with the original `Hamt`. Mutations are
+//! applied in place on the paths they touch; unmodified paths stay
+//! shared. When you are done, [`HamtMut::freeze`] converts the
+//! workspace back into an immutable [`Hamt`] and makes the new
+//! snapshot shareable again. The original `Hamt` value is never
+//! disturbed — both snapshots remain valid after the freeze.
+//!
+//! # Structural sharing — why clones are cheap
+//!
+//! Each internal trie node is wrapped in an `Arc`. Cloning a
+//! [`Hamt`] is therefore a handful of reference-count bumps, not a
+//! deep copy — independent of how many entries the map holds. Two
+//! clones of the same map can diverge through independent
+//! `mutate_freeze` calls; each freeze produces a new root that
+//! shares every unchanged path with the predecessor. This is the
+//! "persistent" in "persistent data structure": prior versions
+//! stay reachable at negligible cost.
+//!
+//! # Thread safety
+//!
+//! An immutable [`Hamt`] is freely shareable across threads — all
+//! internal nodes are `Arc`-backed, and a shared `&Hamt` exposes
+//! only lookup-style methods. Independent threads may each hold
+//! their own clone of the same `Hamt` and read concurrently
+//! without synchronisation.
+//!
+//! The mutable [`HamtMut`] workspace, on the other hand, is **not
+//! `Send`**: a thawed tree carries interior-mutability state that
+//! is only valid for the thread that thawed it. Stage your updates
+//! on one thread, call [`HamtMut::freeze`] to return to the
+//! immutable world, and then hand the fresh [`Hamt`] off wherever
+//! it needs to go.
+//!
+//! # When to use this (and when not to)
+//!
+//! Reach for `hamst` when you need cheap snapshots of a map — for
+//! example, undo history, speculative state, or sharing a view of
+//! a map across threads without locking. Pick `std::collections::HashMap`
+//! instead when you have a single owner and never need multiple
+//! versions to coexist: `HashMap` will always win on raw
+//! insert/lookup throughput for that workload, because it has no
+//! persistence tax to pay.
+//!
+//! # Examples
+//!
+//! Build a map with the [`hamt!`] macro literal and look a key up:
+//!
+//! ```
+//! use hamst::{hamt, Hamt};
+//! let m: Hamt<u32, &str> = hamt!{ 1 => "a", 2 => "b" };
+//! assert_eq!(m.lookup(&1), Some(&"a"));
+//! assert_eq!(m.lookup(&3), None);
+//! ```
+//!
+//! Stage a batch of inserts through the thaw / freeze workflow.
+//! [`Hamt::mutate_freeze`] is the common shorthand that does both
+//! sides for you — thaw, run the closure, freeze:
+//!
+//! ```
+//! use hamst::Hamt;
+//! let empty: Hamt<u32, u32> = Hamt::new();
+//! let populated = empty.mutate_freeze(|m| {
+//!     m.insert(1, 10)?;
+//!     m.insert(2, 20)
+//! }).unwrap();
+//! assert_eq!(populated.lookup(&1), Some(&10));
+//! assert_eq!(populated.lookup(&2), Some(&20));
+//! // The original `empty` is untouched.
+//! assert_eq!(empty.lookup(&1), None);
+//! ```
+//!
+//! # A note for doctest authors
+//!
+//! The default hasher's iteration order is not stable across Rust
+//! versions. If you write a doctest that asserts on the contents
+//! produced by [`Hamt::iter`], collect into a [`std::collections::HashSet`]
+//! rather than a [`Vec`] — otherwise the test will pass locally
+//! and break randomly on a compiler upgrade.
 
+#![deny(missing_docs)]
 #![allow(dead_code)]
 
 mod bitmap;

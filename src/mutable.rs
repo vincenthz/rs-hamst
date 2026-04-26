@@ -6,41 +6,69 @@ use super::node::{
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 
+/// Error returned by [`HamtMut::insert`] when the key is already present.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InsertError {
+    /// The key already has a value in the map. Use [`HamtMut::replace`]
+    /// for overwrite semantics, or [`HamtMut::update`] to transform the
+    /// existing value.
     EntryExists,
 }
 
+/// Error returned by [`HamtMut::remove`] and [`HamtMut::remove_match`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RemoveError {
+    /// The key was not present in the map.
     KeyNotFound,
+    /// Only returned by [`HamtMut::remove_match`]: the key was present
+    /// but its value did not `PartialEq`-match the expected value.
     ValueNotMatching,
 }
 
+/// Error returned by [`HamtMut::update`]. The type parameter `T` is the
+/// caller's closure-error type, surfaced via [`UpdateError::ValueCallbackError`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateError<T> {
+    /// The key was not present in the map. [`HamtMut::insert_or_update`]
+    /// turns this case into an insert.
     KeyNotFound,
+    /// The update closure returned an error — propagated verbatim.
     ValueCallbackError(T),
 }
 
+/// Error returned by [`HamtMut::replace`] and [`HamtMut::replace_with`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplaceError {
+    /// The key was not present in the map.
     KeyNotFound,
 }
 
-/// Mutable HAMT data structure
+/// Mutable HAMT data structure — staging workspace for in-place mutations.
 ///
-/// This is created after a thaw of an immutable HAMT,
-/// and right after the creation, all the node are
-/// still shared with the immutable HAMT.
+/// Created by thawing a [`Hamt`] (via [`Hamt::thaw`] or
+/// [`HamtMut::from`]). Right after creation, all the nodes are still
+/// shared with the immutable [`Hamt`]; structural sharing is preserved
+/// until the first write.
 ///
-/// Once modification happens, then each nodes from
-/// root to leaf will be modified and kept in an
-/// efficient mutable format until freezing.
+/// Once modification happens, each node from root to leaf along the
+/// modified path is copied and kept in an efficient mutable format until
+/// freezing. Call [`HamtMut::freeze`] to return to the immutable world
+/// — the resulting [`Hamt`] shares all unmodified subtrees with the
+/// original.
+///
+/// # Thread safety
+///
+/// `HamtMut` is **not `Send`**. A thawed tree holds in-place mutation
+/// state that is only valid on the thread that thawed it. Stage your
+/// updates on one thread, call [`HamtMut::freeze`] to return to the
+/// immutable world, and then hand the fresh [`Hamt`] off to another
+/// thread.
 pub struct HamtMut<K, V, H = std::collections::hash_map::DefaultHasher> {
     root: Hamt<K, V, H>,
 }
 
+/// O(1) clone of the staging workspace — the root [`Hamt`] is cloned, and
+/// internal nodes are [`std::sync::Arc`]-shared.
 impl<H, K, V> Clone for HamtMut<K, V, H> {
     fn clone(&self) -> Self {
         Self {
@@ -49,6 +77,8 @@ impl<H, K, V> Clone for HamtMut<K, V, H> {
     }
 }
 
+/// Thaw a [`Hamt`] into a [`HamtMut`] without mutation. Equivalent to
+/// [`Hamt::thaw`].
 impl<'a, H, K, V> From<&'a Hamt<K, V, H>> for HamtMut<K, V, H> {
     fn from(t: &'a Hamt<K, V, H>) -> Self {
         HamtMut { root: t.clone() }
@@ -56,27 +86,55 @@ impl<'a, H, K, V> From<&'a Hamt<K, V, H>> for HamtMut<K, V, H> {
 }
 
 impl<H: Hasher + Default, K: Clone + Eq + Hash, V: Clone> HamtMut<K, V, H> {
-    /// Create a new empty mutable HAMT
+    /// Create a new empty mutable HAMT.
     pub fn new() -> Self {
         HamtMut { root: Hamt::new() }
     }
 }
 
 impl<H, K, V> HamtMut<K, V, H> {
-    /// Freeze the mutable HAMT back into an immutable HAMT
+    /// Freeze this mutable HAMT back into an immutable [`Hamt`].
     ///
-    /// This recursively freeze all the mutable nodes
+    /// Recursively freezes all the in-place mutable nodes along the
+    /// modified path. The returned [`Hamt`] shares all unmodified
+    /// subtrees with the [`Hamt`] this `HamtMut` was thawed from.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use hamst::{Hamt, HamtMut};
+    /// let mut staging: HamtMut<u32, u32> = HamtMut::new();
+    /// staging.insert(1, 10).unwrap();
+    /// let m: Hamt<u32, u32> = staging.freeze();
+    /// assert_eq!(m.lookup(&1), Some(&10));
+    /// ```
     pub fn freeze(self) -> Hamt<K, V, H> {
         self.root
     }
 }
 
 impl<H: Hasher + Default, K: Clone + Eq + Hash, V: Clone> HamtMut<K, V, H> {
-    /// Insert a new key into the HAMT
+    /// Insert a new key/value pair into the HAMT.
     ///
-    /// If the key already exists, then an InsertError is returned.
+    /// Insert is strict: if the key already exists, this returns
+    /// [`InsertError::EntryExists`] rather than silently overwriting.
+    /// Use [`HamtMut::replace`] for overwrite semantics, or
+    /// [`HamtMut::insert_or_update`] to atomically insert-or-transform.
     ///
-    /// To simulaneously manipulate a key, either to insert or update, use 'insert_or_update'
+    /// # Examples
+    ///
+    /// ```
+    /// # use hamst::{Hamt, HamtMut};
+    /// let mut staging: HamtMut<u32, &str> = HamtMut::new();
+    /// staging.insert(1, "a").unwrap();
+    /// let m = staging.freeze();
+    /// assert_eq!(m.lookup(&1), Some(&"a"));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InsertError::EntryExists`] when the key is already
+    /// present in the map.
     pub fn insert(&mut self, k: K, v: V) -> Result<(), InsertError> {
         let h = HashedKey::compute(self.root.hasher, &k);
         let newroot = insert_rec(&self.root.root, h, 0, k, v)?;
@@ -89,11 +147,30 @@ impl<H: Hasher + Default, K: Clone + Eq + Hash, V: Clone> HamtMut<K, V, H> {
 }
 
 impl<H: Hasher + Default, K: Eq + Hash + Clone, V: PartialEq + Clone> HamtMut<K, V, H> {
-    /// Remove a key from the HAMT, if it also matching the value V
+    /// Remove a key from the HAMT only if its current value `PartialEq`-matches
+    /// the supplied `v`.
     ///
-    /// If the key doesn't exist, then RemoveError::KeyNotFound will be returned
-    /// and otherwise if the key exists but the value doesn't match, RemoveError::ValueNotMatching
-    /// will be returned.
+    /// Useful for conditional removal — e.g., compare-and-delete patterns
+    /// where the caller wants to ensure no concurrent update slipped in
+    /// between the read and the remove. (Concurrency here is logical, not
+    /// thread-level — `HamtMut` is `!Send`.)
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use hamst::{Hamt, HamtMut};
+    /// let mut staging: HamtMut<u32, &str> = HamtMut::new();
+    /// staging.insert(1, "a").unwrap();
+    /// staging.remove_match(&1, &"a").unwrap();
+    /// let m = staging.freeze();
+    /// assert_eq!(m.lookup(&1), None);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`RemoveError::KeyNotFound`] when the key is not present.
+    /// - Returns [`RemoveError::ValueNotMatching`] when the key is present
+    ///   but its current value does not equal `v`.
     pub fn remove_match(&mut self, k: &K, v: &V) -> Result<(), RemoveError> {
         let h = HashedKey::compute(self.root.hasher, &k);
         let newroot = remove_eq_rec(&self.root.root, h, 0, k, v)?;
@@ -111,9 +188,22 @@ impl<H: Hasher + Default, K: Eq + Hash + Clone, V: PartialEq + Clone> HamtMut<K,
 }
 
 impl<H: Hasher + Default, K: Clone + Eq + Hash, V: Clone> HamtMut<K, V, H> {
-    /// Remove a key from the HAMT
+    /// Remove a key from the HAMT.
     ///
-    /// If the key doesn't exist, then RemoveError::KeyNotFound will be returned
+    /// # Examples
+    ///
+    /// ```
+    /// # use hamst::{Hamt, HamtMut};
+    /// let mut staging: HamtMut<u32, &str> = HamtMut::new();
+    /// staging.insert(1, "a").unwrap();
+    /// staging.remove(&1).unwrap();
+    /// let m = staging.freeze();
+    /// assert_eq!(m.lookup(&1), None);
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RemoveError::KeyNotFound`] when the key is not present.
     pub fn remove(&mut self, k: &K) -> Result<(), RemoveError> {
         let h = HashedKey::compute(self.root.hasher, &k);
         let newroot = remove_rec(&self.root.root, h, 0, k)?;
@@ -131,8 +221,27 @@ impl<H: Hasher + Default, K: Clone + Eq + Hash, V: Clone> HamtMut<K, V, H> {
 }
 
 impl<H: Hasher + Default, K: Eq + Hash + Clone, V: Clone> HamtMut<K, V, H> {
-    /// Replace the element at the key by the v and return the new tree
-    /// and the old value.
+    /// Replace the value at `k` and return the previous value.
+    ///
+    /// Unlike [`HamtMut::insert`], `replace` requires the key to be
+    /// already present — it will not insert. Use it when overwrite
+    /// semantics are intended.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use hamst::{Hamt, HamtMut};
+    /// let mut staging: HamtMut<u32, u32> = HamtMut::new();
+    /// staging.insert(1, 10).unwrap();
+    /// let old = staging.replace(&1, 99).unwrap();
+    /// assert_eq!(old, 10);
+    /// let m = staging.freeze();
+    /// assert_eq!(m.lookup(&1), Some(&99));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReplaceError::KeyNotFound`] when the key is not present.
     pub fn replace(&mut self, k: &K, v: V) -> Result<V, ReplaceError> {
         let h = HashedKey::compute(self.root.hasher, &k);
         let (newroot, oldv) = replace_rec(&self.root.root, h, 0, k, v)?;
@@ -143,8 +252,28 @@ impl<H: Hasher + Default, K: Eq + Hash + Clone, V: Clone> HamtMut<K, V, H> {
         Ok(oldv)
     }
 
-    /// Replace the element at the key by the v and return the new tree
-    /// and the old value.
+    /// Replace the value at `k` with the result of `f` applied to the
+    /// existing value.
+    ///
+    /// Like [`HamtMut::replace`] but accepts a transform closure instead
+    /// of a fresh value. The closure is invoked exactly once if the key
+    /// exists; the new value replaces the old.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use hamst::{Hamt, HamtMut};
+    /// let mut staging: HamtMut<u32, u32> = HamtMut::new();
+    /// staging.insert(1, 10).unwrap();
+    /// staging.replace_with(&1, |old| old + 5).unwrap();
+    /// let m = staging.freeze();
+    /// assert_eq!(m.lookup(&1), Some(&15));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ReplaceError::KeyNotFound`] when the key is not present;
+    /// the closure `f` is not invoked.
     pub fn replace_with<F>(&mut self, k: &K, f: F) -> Result<(), ReplaceError>
     where
         F: FnOnce(&V) -> V,
@@ -160,11 +289,33 @@ impl<H: Hasher + Default, K: Eq + Hash + Clone, V: Clone> HamtMut<K, V, H> {
 }
 
 impl<H: Hasher + Default, K: Eq + Hash + Clone, V: Clone> HamtMut<K, V, H> {
-    /// Update the element at the key K.
+    /// Update the value at `k` by applying the closure `f` to the existing
+    /// value.
     ///
-    /// If the closure F in parameter returns None, then the key is deleted.
+    /// If `f` returns `Ok(None)`, the key is removed. If it returns
+    /// `Ok(Some(new_v))`, the value is replaced. If it returns `Err(e)`,
+    /// the error is wrapped in [`UpdateError::ValueCallbackError`] and
+    /// propagated.
     ///
-    /// If the key is not present then UpdateError::KeyNotFound is returned
+    /// `update` cannot insert a missing key — use
+    /// [`HamtMut::insert_or_update`] for that pattern.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use hamst::{Hamt, HamtMut};
+    /// let mut staging: HamtMut<u32, u32> = HamtMut::new();
+    /// staging.insert(1, 10).unwrap();
+    /// staging.update::<_, ()>(&1, |old| Ok(Some(old + 1))).unwrap();
+    /// let m = staging.freeze();
+    /// assert_eq!(m.lookup(&1), Some(&11));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// - Returns [`UpdateError::KeyNotFound`] when the key is not present.
+    /// - Returns [`UpdateError::ValueCallbackError`] wrapping any error
+    ///   `U` returned by the closure `f`.
     pub fn update<F, U>(&mut self, k: &K, f: F) -> Result<(), UpdateError<U>>
     where
         F: FnOnce(&V) -> Result<Option<V>, U>,
@@ -183,10 +334,33 @@ impl<H: Hasher + Default, K: Eq + Hash + Clone, V: Clone> HamtMut<K, V, H> {
         Ok(())
     }
 
-    /// Update or insert the element at the key K
+    /// Insert a new entry, or update the existing one if the key is
+    /// already present.
     ///
-    /// If the element is not present, then V is added, otherwise the closure F is apply
-    /// to the found element. If the closure returns None, then the key is deleted
+    /// If the key is absent, `v` is inserted. If the key is present, `f`
+    /// is applied to the existing value; an `Ok(Some(new))` result
+    /// replaces the value, and `Ok(None)` removes the key. Closure errors
+    /// are propagated as `E` directly — neither [`UpdateError`] nor
+    /// [`InsertError`] surface to the caller.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use hamst::{Hamt, HamtMut};
+    /// let mut staging: HamtMut<u32, u32> = HamtMut::new();
+    /// // First call: key absent → insert 10.
+    /// staging.insert_or_update::<_, ()>(1, 10, |_| Ok(Some(0))).unwrap();
+    /// // Second call: key present → transform via closure.
+    /// staging.insert_or_update::<_, ()>(1, 0, |old| Ok(Some(old + 5))).unwrap();
+    /// let m = staging.freeze();
+    /// assert_eq!(m.lookup(&1), Some(&15));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Propagates any error `E` returned by the closure `f`. Neither
+    /// [`UpdateError::KeyNotFound`] nor [`InsertError::EntryExists`]
+    /// surface to the caller — the implementation handles both.
     pub fn insert_or_update<F, E>(&mut self, k: K, v: V, f: F) -> Result<(), E>
     where
         F: FnOnce(&V) -> Result<Option<V>, E>,
@@ -203,12 +377,22 @@ impl<H: Hasher + Default, K: Eq + Hash + Clone, V: Clone> HamtMut<K, V, H> {
         }
     }
 
-    /// Update or insert the element at the key K
+    /// Infallible variant of [`HamtMut::insert_or_update`].
     ///
-    /// If the element is not present, then V is added, otherwise the closure F is apply
-    /// to the found element. If the closure returns None, then the key is deleted.
+    /// The closure `f` returns `Option<V>` directly (no `Result`), so
+    /// nothing can fail and the function returns `()`. This is the
+    /// machinery behind the [`crate::hamt!`] macro.
     ///
-    /// This is similar to 'insert_or_update' except the closure shouldn't be failing
+    /// # Examples
+    ///
+    /// ```
+    /// # use hamst::{Hamt, HamtMut};
+    /// let mut staging: HamtMut<u32, u32> = HamtMut::new();
+    /// staging.insert_or_update_simple(1, 10, |_| Some(0));
+    /// staging.insert_or_update_simple(1, 0, |old| Some(old + 5));
+    /// let m = staging.freeze();
+    /// assert_eq!(m.lookup(&1), Some(&15));
+    /// ```
     pub fn insert_or_update_simple<F>(&mut self, k: K, v: V, f: F) -> ()
     where
         F: for<'a> FnOnce(&'a V) -> Option<V>,
@@ -225,6 +409,9 @@ impl<H: Hasher + Default, K: Eq + Hash + Clone, V: Clone> HamtMut<K, V, H> {
     }
 }
 
+/// Build a [`HamtMut`] from an iterator of `(K, V)` pairs. Duplicate keys:
+/// first insert wins (subsequent inserts of the same key surface
+/// [`InsertError::EntryExists`] internally and are silently dropped).
 impl<H: Default + Hasher, K: Eq + Hash + Clone, V: Clone> FromIterator<(K, V)>
     for HamtMut<K, V, H>
 {

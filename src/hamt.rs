@@ -1,7 +1,12 @@
+//! Public API re-exports and the [`hamt!`] macro.
+//!
+//! See the crate-level documentation for an overview of HAMT, thaw/freeze,
+//! and structural sharing.
+
 pub use super::immutable::*;
 pub use super::mutable::*;
 
-/// Construct a HAMT from a sequence of key/value pairs using a hashtable like syntax.
+/// Construct a [`Hamt`] from a sequence of key/value pairs using hashtable-like syntax.
 ///
 /// In the case of duplicated keys, the latest value is used.
 ///
@@ -12,14 +17,11 @@ pub use super::mutable::*;
 /// # Examples
 ///
 /// ```
-/// # #[macro_use] extern crate hamst;
-/// # use hamst::Hamt;
-/// # use std::iter::FromIterator;
-/// # use std::collections::hash_map::DefaultHasher;
-/// # fn main() {
-/// let reference : Hamt<u32, u32, DefaultHasher> = Hamt::from_iter(vec![(1, 11), (2, 22), (3, 33)].into_iter());
-/// assert!(hamt!{ 1 => 11, 2 => 22, 3 => 33 } == reference);
-/// # }
+/// # use std::collections::HashSet;
+/// # use hamst::{hamt, Hamt};
+/// let m: Hamt<u32, u32> = hamt!{ 1 => 11, 2 => 22, 3 => 33 };
+/// let got: HashSet<(u32, u32)> = m.iter().map(|(k, v)| (*k, *v)).collect();
+/// assert_eq!(got, HashSet::from([(1, 11), (2, 22), (3, 33)]));
 /// ```
 #[macro_export]
 macro_rules! hamt {

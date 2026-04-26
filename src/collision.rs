@@ -1,3 +1,6 @@
+//! Hash-collision handling via a linear `(K, V)` bucket; leaf of last
+//! resort at max trie depth.
+
 use super::hash::HashedKey;
 use super::mutable::{InsertError, RemoveError, ReplaceError, UpdateError};
 use super::node::Entry;
