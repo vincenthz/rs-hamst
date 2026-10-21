@@ -216,6 +216,55 @@ mod tests {
     }
 
     #[test]
+    fn insert_or_replace() {
+        let k1 = "ABC".to_string();
+        let k2 = "DEF".to_string();
+        let mut hm: HamtMut<String, u32> = HamtMut::new();
+        assert_eq!(hm.insert_or_replace(k1.clone(), 1), None);
+        assert_eq!(hm.insert_or_replace(k2.clone(), 2), None);
+        let h1 = hm.freeze();
+        assert_eq!(h1.lookup(&k1), Some(&1));
+        assert_eq!(h1.size(), 2);
+
+        let mut hm = h1.thaw();
+        assert_eq!(hm.insert_or_replace(k1.clone(), 10), Some(1));
+        let h2 = hm.freeze();
+        assert_eq!(h2.lookup(&k1), Some(&10));
+        assert_eq!(h2.lookup(&k2), Some(&2));
+        assert_eq!(h2.size(), 2);
+    }
+
+    #[test]
+    fn extend_last_wins() {
+        let k1 = "ABC".to_string();
+        let k2 = "DEF".to_string();
+        let mut hm: HamtMut<String, u32> = HamtMut::new();
+        hm.extend([(k1.clone(), 1), (k2.clone(), 2), (k1.clone(), 3)]);
+        let h = hm.freeze();
+        assert_eq!(h.lookup(&k1), Some(&3));
+        assert_eq!(h.lookup(&k2), Some(&2));
+        assert_eq!(h.size(), 2);
+    }
+
+    #[test]
+    fn extend_persistent() {
+        let k1 = "ABC".to_string();
+        let k2 = "DEF".to_string();
+        let h1: Hamt<String, u32> = Hamt::new()
+            .mutate_freeze(|hm| hm.insert(k1.clone(), 1))
+            .unwrap();
+        let mut hm = h1.thaw();
+        hm.extend([(k1.clone(), 10), (k2.clone(), 20)]);
+        let h2 = hm.freeze();
+        assert_eq!(h2.lookup(&k1), Some(&10));
+        assert_eq!(h2.lookup(&k2), Some(&20));
+        assert_eq!(h2.size(), 2);
+        assert_eq!(h1.lookup(&k1), Some(&1));
+        assert_eq!(h1.lookup(&k2), None);
+        assert_eq!(h1.size(), 1);
+    }
+
+    #[test]
     fn empty_size() {
         let h: Hamt<&String, u32> = Hamt::new();
         assert_eq!(h.size(), 0)
