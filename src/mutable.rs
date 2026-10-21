@@ -3,6 +3,7 @@ use super::immutable::Hamt;
 use super::node::{
     insert_rec, remove_eq_rec, remove_rec, replace_rec, replace_with_rec, update_rec,
 };
+use std::fmt;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 
@@ -477,5 +478,23 @@ impl<H: Hasher + Default, K: Clone + Eq + Hash, V: Clone> Extend<(K, V)> for Ham
         for (k, v) in iter {
             self.insert_or_replace(k, v);
         }
+    }
+}
+
+/// Formats the staging workspace as the map it currently holds, exactly as
+/// the [`Hamt`] returned by [`HamtMut::freeze`] would print. Entries print
+/// in the same unspecified order as [`Hamt::iter`].
+///
+/// # Examples
+///
+/// ```
+/// # use hamst::{Hamt, HamtMut};
+/// let mut staging: HamtMut<u32, u32> = HamtMut::new();
+/// staging.insert(1, 10).unwrap();
+/// assert_eq!(format!("{:?}", staging), "{1: 10}");
+/// ```
+impl<K: fmt::Debug, V: fmt::Debug, H> fmt::Debug for HamtMut<K, V, H> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(&self.root, f)
     }
 }

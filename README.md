@@ -81,7 +81,7 @@ The public, read-only view. Safe to clone freely and to share between threads
 | `mutate_freeze(f)`    | Thaw → apply `f` → freeze, all in one call   |
 | `mutate_freeze_ret(f)`| Same, but also returns a value from `f`      |
 
-`Hamt` implements `Clone`, `Default`, `PartialEq`, `Eq`, and
+`Hamt` implements `Clone`, `Debug`, `Default`, `PartialEq`, `Eq`, and
 `FromIterator<(K, V)>`.
 
 ### `HamtMut<K, V, H>` — staging area for edits
@@ -103,6 +103,8 @@ modifying operations live here; calling `freeze()` returns an immutable
 | `insert_or_replace(k, v)`               | Insert if absent, else replace and return the previous value |
 | `extend(iter)`                          | `Extend<(K, V)>`: insert-or-replace each pair, last wins |
 | `freeze()`                              | Back to an immutable `Hamt`               |
+
+`HamtMut` implements `Debug`, printing as the map it currently holds.
 
 ## The `hamt!` macro
 
