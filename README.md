@@ -100,6 +100,8 @@ modifying operations live here; calling `freeze()` returns an immutable
 | `update(&k, &#124;old&#124; Result<Option<V>, E>)` | Update or delete (return `None`) |
 | `insert_or_update(k, v, f)`             | Insert if absent, else apply `f`          |
 | `insert_or_update_simple(k, v, f)`      | Same, with an infallible closure          |
+| `insert_or_replace(k, v)`               | Insert if absent, else replace and return the previous value |
+| `extend(iter)`                          | `Extend<(K, V)>`: insert-or-replace each pair, last wins |
 | `freeze()`                              | Back to an immutable `Hamt`               |
 
 ## The `hamt!` macro

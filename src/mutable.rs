@@ -144,6 +144,35 @@ impl<H: Hasher + Default, K: Clone + Eq + Hash, V: Clone> HamtMut<K, V, H> {
         };
         Ok(())
     }
+
+    /// Insert `v` at `k`, replacing the current value if `k` is already
+    /// present.
+    ///
+    /// This is the [`std::collections::HashMap::insert`]-like write: unlike
+    /// [`HamtMut::insert`] it never fails, and unlike [`HamtMut::replace`]
+    /// it does not require the key to exist. Returns `None` when `k` was
+    /// absent, or `Some(previous)` when an existing value was replaced.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use hamst::{Hamt, HamtMut};
+    /// let mut staging: HamtMut<u32, &str> = HamtMut::new();
+    /// assert_eq!(staging.insert_or_replace(1, "a"), None);
+    /// assert_eq!(staging.insert_or_replace(1, "b"), Some("a"));
+    /// let m = staging.freeze();
+    /// assert_eq!(m.lookup(&1), Some(&"b"));
+    /// ```
+    pub fn insert_or_replace(&mut self, k: K, v: V) -> Option<V> {
+        if self.root.contains_key(&k) {
+            // unwrap is safe: the key was just found, so KeyNotFound cannot be raised
+            Some(self.replace(&k, v).unwrap())
+        } else {
+            // unwrap is safe: the key was just found absent, so EntryExists cannot be raised
+            self.insert(k, v).unwrap();
+            None
+        }
+    }
 }
 
 impl<H: Hasher + Default, K: Eq + Hash + Clone, V: PartialEq + Clone> HamtMut<K, V, H> {
@@ -424,5 +453,29 @@ impl<H: Default + Hasher, K: Eq + Hash + Clone, V: Clone> FromIterator<(K, V)>
             }
         }
         h
+    }
+}
+
+/// Insert or replace each `(K, V)` pair with [`HamtMut::insert_or_replace`].
+/// Duplicate keys: last value wins, as with [`std::collections::HashMap`].
+/// Note that the [`FromIterator`] impl keeps the first value instead.
+///
+/// # Examples
+///
+/// ```
+/// # use hamst::{Hamt, HamtMut, hamt};
+/// let m: Hamt<u32, &str> = hamt!{ 1 => "a" };
+/// let mut staging = m.thaw();
+/// staging.extend([(2, "b"), (1, "c"), (2, "d")]);
+/// let m2 = staging.freeze();
+/// assert_eq!(m2.lookup(&1), Some(&"c"));
+/// assert_eq!(m2.lookup(&2), Some(&"d"));
+/// assert_eq!(m2.size(), 2);
+/// ```
+impl<H: Hasher + Default, K: Clone + Eq + Hash, V: Clone> Extend<(K, V)> for HamtMut<K, V, H> {
+    fn extend<I: IntoIterator<Item = (K, V)>>(&mut self, iter: I) {
+        for (k, v) in iter {
+            self.insert_or_replace(k, v);
+        }
     }
 }
