@@ -1,6 +1,7 @@
 use super::hash::{Hash, HashedKey, Hasher};
 use super::mutable::HamtMut;
 use super::node::{Entry, LookupRet, Node, NodeIter, lookup_one, size_rec};
+use std::fmt;
 use std::iter::FromIterator;
 use std::marker::PhantomData;
 use std::mem::swap;
@@ -325,3 +326,28 @@ impl<H: Default + Hasher, K: Eq + Hash, V: PartialEq> PartialEq for Hamt<K, V, H
 }
 
 impl<H: Default + Hasher, K: Eq + Hash, V: Eq> Eq for Hamt<K, V, H> {}
+
+/// Formats the map as `{k: v, ...}`, and one entry per line with `{:#?}`.
+/// Entries print in the same unspecified order as [`Hamt::iter`].
+///
+/// Only `K: Debug` and `V: Debug` are required, so a type holding a
+/// [`Hamt`] can `#[derive(Debug)]`.
+///
+/// # Examples
+///
+/// ```
+/// # use hamst::{Hamt, hamt};
+/// let m: Hamt<u32, u32> = hamt!{ 1 => 10 };
+/// assert_eq!(format!("{:?}", m), "{1: 10}");
+/// ```
+impl<K: fmt::Debug, V: fmt::Debug, H> fmt::Debug for Hamt<K, V, H> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // built directly rather than through `Hamt::iter`, which also
+        // requires `K: Hash + Eq` and `H: Hasher + Default`
+        let entries = HamtIter {
+            stack: vec![self.root.iter()],
+            content: None,
+        };
+        f.debug_map().entries(entries).finish()
+    }
+}

@@ -388,6 +388,35 @@ mod tests {
         assert_eq!(h2.size(), keys.len() + 2);
     }
 
+    #[test]
+    fn debug_format() {
+        let empty: Hamt<u32, u32> = Hamt::new();
+        assert_eq!(format!("{:?}", empty), "{}");
+
+        let one: Hamt<u32, u32> = hamt! { 1 => 10 };
+        assert_eq!(format!("{:?}", one), "{1: 10}");
+    }
+
+    #[test]
+    fn debug_format_unordered() {
+        // iteration order is unspecified: check the entries, not their order
+        let h: Hamt<u32, u32> = hamt! { 1 => 10, 2 => 20 };
+        let flat = format!("{:?}", h);
+        assert!(flat.contains("1: 10") && flat.contains("2: 20"), "{}", flat);
+        let pretty = format!("{:#?}", h);
+        assert!(
+            pretty.contains("1: 10") && pretty.contains("2: 20"),
+            "{}",
+            pretty
+        );
+    }
+
+    #[test]
+    fn debug_format_thawed() {
+        let h: Hamt<u32, u32> = hamt! { 1 => 10, 2 => 20 };
+        assert_eq!(format!("{:?}", h.thaw()), format!("{:?}", h));
+    }
+
     //use hash::HashedKey;
     //use std::marker::PhantomData;
 
