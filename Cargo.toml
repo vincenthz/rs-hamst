@@ -9,7 +9,7 @@ description = "Hash Array Mapped Shareable Trie"
 keywords = [ "HAMT", "Multi-thread", "Shareable" ]
 categories = [ "data-structures" ]
 edition = "2024"
-
+rust-version = "1.95"
 
 [dependencies]
 
